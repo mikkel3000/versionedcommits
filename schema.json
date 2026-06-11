@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "required": ["tags", "major", "minor", "patch"],
+  "properties": {
+    "tags": {
+      "type": "array",
+      "items": {
+        "pattern": "^v(0|[1-9]\\d*)(?:\\.(0|[1-9]\\d*)(?:\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?)?)?$",
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "major": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": ""
+          },
+          "description": {
+            "type": "string",
+            "description": ""
+          },
+          "sha": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["title", "description"]
+      }
+    },
+    "minor": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": ""
+          },
+          "description": {
+            "type": "string",
+            "description": ""
+          },
+          "sha": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["title", "description"]
+      }
+    },
+    "patch": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": ""
+          },
+          "description": {
+            "type": "string",
+            "description": ""
+          },
+          "sha": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["title", "description"]
+      }
+    }
+  }
+}
