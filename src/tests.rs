@@ -214,6 +214,13 @@ cli_parse_tests! {
             ..CliOptions::default()
         },
     },
+    parses_next_tag_output: {
+        args: ["--next-tag"],
+        expected: CliOptions {
+            output_format: OutputFormat::NextTag,
+            ..CliOptions::default()
+        },
+    },
     parses_output_path: {
         args: ["--output", "release-notes.md"],
         expected: CliOptions {
@@ -308,6 +315,17 @@ fn prepends_output_to_file_and_creates_parent_directories() {
         fs::read_to_string(output_path).unwrap(),
         "new release\nold release\n"
     );
+}
+
+#[test]
+fn renders_only_the_next_immutable_tag() {
+    let changelog = Changelog {
+        tags: vec!["v1.3.0".to_string(), "v1.3".to_string(), "v1".to_string()],
+        ..Changelog::default()
+    };
+
+    assert_eq!(render_next_tag(&changelog), "v1.3.0\n");
+    assert_eq!(render_next_tag(&Changelog::default()), "");
 }
 
 markdown_tests! {

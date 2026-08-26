@@ -405,6 +405,14 @@ fn prepend_to_file(path: &str, content: &str) -> io::Result<()> {
     fs::write(path, format!("{content}{existing}"))
 }
 
+fn render_next_tag(changelog: &Changelog) -> String {
+    changelog
+        .tags
+        .first()
+        .map(|tag| format!("{tag}\n"))
+        .unwrap_or_default()
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args = env::args().skip(1).collect::<Vec<_>>();
     let options = parse_cli_args(&args)
@@ -419,6 +427,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             output
         }
         OutputFormat::Markdown => render_markdown(&changelog),
+        OutputFormat::NextTag => render_next_tag(&changelog),
     };
 
     if options.commit_changelog && !changelog.tags.is_empty() {

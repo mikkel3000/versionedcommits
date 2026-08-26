@@ -3,6 +3,7 @@ pub(crate) enum OutputFormat {
     #[default]
     Json,
     Markdown,
+    NextTag,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -33,6 +34,10 @@ pub(crate) fn parse_cli_args(args: &[String]) -> Result<CliOptions, String> {
                 };
                 options.output_format = parse_output_format(format)?;
                 index += 2;
+            }
+            "--next-tag" => {
+                options.output_format = OutputFormat::NextTag;
+                index += 1;
             }
             "--output" => {
                 let Some(output_path) = args.get(index + 1) else {
@@ -135,5 +140,5 @@ fn has_leading_zero_numeric_identifier(identifier: &str) -> bool {
 }
 
 pub(crate) fn usage() -> &'static str {
-    "usage: versionedcommits [--format json|markdown] [--output path] [--tag] [--aliases] [--commit] [--pre identifier] [--build identifier]"
+    "usage: versionedcommits [--format json|markdown] [--next-tag] [--output path] [--tag] [--aliases] [--commit] [--pre identifier] [--build identifier]"
 }

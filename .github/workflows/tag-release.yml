@@ -1,0 +1,42 @@
+name: Tag release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: versionedcommits-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'versionedcommits/release' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out released commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Verify release contents
+        id: release
+        run: |
+          test -x bin/versionedcommits
+          release_tag="$(bin/versionedcommits --next-tag)"
+          test -n "$release_tag"
+          grep -Fqx "## [${release_tag}]" CHANGELOG.md
+          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push release tag
+        run: |
+          bin/versionedcommits --tag
+          git push origin --tags
