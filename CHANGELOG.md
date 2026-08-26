@@ -1,5 +1,10 @@
 ## [v0.1.0]
 
+### Added
+
+- versionedcommits rust binary and docs (`7f036bc`)
+## [v0.1.0]
+
 ### Minor
 
 - Version 0.1.0 (`b40c027`)
