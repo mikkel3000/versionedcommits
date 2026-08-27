@@ -1,0 +1,206 @@
+name: Versioned releases
+
+on:
+  workflow_call:
+    inputs:
+      pre:
+        description: SemVer prerelease metadata
+        required: false
+        type: string
+        default: ''
+      build:
+        description: SemVer build metadata
+        required: false
+        type: string
+        default: ''
+      aliases:
+        description: Create moving major and minor tag aliases
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: ${{ github.repository }}-versionedcommits-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'versionedcommits/release' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out released commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check out versionedcommits
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .versionedcommits-workflow
+
+      - name: Verify release contents
+        env:
+          PRE: ${{ inputs.pre }}
+          BUILD: ${{ inputs.build }}
+          ALIASES: ${{ inputs.aliases }}
+        run: |
+          test -x .versionedcommits-workflow/bin/versionedcommits
+          release_args=()
+          [[ -z "$PRE" ]] || release_args+=(--pre "$PRE")
+          [[ -z "$BUILD" ]] || release_args+=(--build "$BUILD")
+          [[ "$ALIASES" != "true" ]] || release_args+=(--aliases)
+          release_tag="$(.versionedcommits-workflow/bin/versionedcommits --next-tag "${release_args[@]}")"
+          test -n "$release_tag"
+          grep -Fqx "## [${release_tag}]" CHANGELOG.md
+
+      - name: Create and push release tag
+        env:
+          PRE: ${{ inputs.pre }}
+          BUILD: ${{ inputs.build }}
+          ALIASES: ${{ inputs.aliases }}
+        run: |
+          release_args=()
+          [[ -z "$PRE" ]] || release_args+=(--pre "$PRE")
+          [[ -z "$BUILD" ]] || release_args+=(--build "$BUILD")
+          [[ "$ALIASES" != "true" ]] || release_args+=(--aliases)
+          .versionedcommits-workflow/bin/versionedcommits --tag "${release_args[@]}"
+          git push origin --tags
+
+  update:
+    needs: tag
+    if: always() && (needs.tag.result == 'success' || needs.tag.result == 'skipped') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.ref == 'versionedcommits/release' && github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Detect merged release PR
+        id: merged_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          skip=false
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            release_pr_count="$(gh api "repos/${REPOSITORY}/commits/${PUSH_SHA}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "'"${DEFAULT_BRANCH}"'" and .head.ref == "versionedcommits/release" and .head.repo.full_name == "'"${REPOSITORY}"'")] | length')"
+            if [[ "$release_pr_count" != "0" ]]; then
+              skip=true
+            fi
+          fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out versionedcommits
+        if: steps.merged_release.outputs.skip != 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .versionedcommits-workflow
+
+      - name: Verify versionedcommits binary
+        if: steps.merged_release.outputs.skip != 'true'
+        run: test -x .versionedcommits-workflow/bin/versionedcommits
+
+      - name: Detect release
+        if: steps.merged_release.outputs.skip != 'true'
+        id: release
+        env:
+          PRE: ${{ inputs.pre }}
+          BUILD: ${{ inputs.build }}
+          ALIASES: ${{ inputs.aliases }}
+        run: |
+          release_args=()
+          [[ -z "$PRE" ]] || release_args+=(--pre "$PRE")
+          [[ -z "$BUILD" ]] || release_args+=(--build "$BUILD")
+          [[ "$ALIASES" != "true" ]] || release_args+=(--aliases)
+          release_tag="$(.versionedcommits-workflow/bin/versionedcommits --next-tag "${release_args[@]}")"
+          echo "tag=${release_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Remove stale release PR
+        if: steps.merged_release.outputs.skip != 'true' && steps.release.outputs.tag == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          release_pr="$(gh pr list --repo "$REPOSITORY" --base "$DEFAULT_BRANCH" --head versionedcommits/release --state open --json number --jq '.[0].number // empty')"
+          if [[ -n "$release_pr" ]]; then
+            gh pr close "$release_pr" --repo "$REPOSITORY" --delete-branch
+          elif git ls-remote --exit-code --heads origin refs/heads/versionedcommits/release >/dev/null 2>&1; then
+            git push origin --delete versionedcommits/release
+          fi
+
+      - name: Generate release commit
+        if: steps.merged_release.outputs.skip != 'true' && steps.release.outputs.tag != ''
+        id: generated
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PRE: ${{ inputs.pre }}
+          BUILD: ${{ inputs.build }}
+          ALIASES: ${{ inputs.aliases }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --force-create versionedcommits/release "origin/${DEFAULT_BRANCH}"
+          release_args=()
+          [[ -z "$PRE" ]] || release_args+=(--pre "$PRE")
+          [[ -z "$BUILD" ]] || release_args+=(--build "$BUILD")
+          [[ "$ALIASES" != "true" ]] || release_args+=(--aliases)
+          .versionedcommits-workflow/bin/versionedcommits --format markdown --output CHANGELOG.md "${release_args[@]}"
+          git add CHANGELOG.md
+          git commit -m "Update the changelog for version ${RELEASE_TAG}"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Push release branch
+        if: steps.merged_release.outputs.skip != 'true' && steps.release.outputs.tag != ''
+        run: |
+          remote_sha="$(git ls-remote --heads origin refs/heads/versionedcommits/release | cut -f1)"
+          if [[ -n "$remote_sha" ]]; then
+            git push --force-with-lease="refs/heads/versionedcommits/release:${remote_sha}" origin HEAD:refs/heads/versionedcommits/release
+          else
+            git push origin HEAD:refs/heads/versionedcommits/release
+          fi
+
+      - name: Create or update release PR
+        if: steps.merged_release.outputs.skip != 'true' && steps.release.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          release_pr="$(gh pr list --repo "$REPOSITORY" --base "$DEFAULT_BRANCH" --head versionedcommits/release --state open --json number --jq '.[0].number // empty')"
+          pr_body="This automated PR contains the changelog for ${RELEASE_TAG}. Merging it releases and tags this version."
+          if [[ -n "$release_pr" ]]; then
+            gh pr edit "$release_pr" --repo "$REPOSITORY" --title "Release ${RELEASE_TAG}" --body "$pr_body"
+          else
+            gh pr create --repo "$REPOSITORY" --base "$DEFAULT_BRANCH" --head versionedcommits/release --title "Release ${RELEASE_TAG}" --body "$pr_body"
+          fi
+
+      - name: Mark release PR ready
+        if: steps.merged_release.outputs.skip != 'true' && steps.release.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GENERATED_SHA: ${{ steps.generated.outputs.sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: gh api --method POST "repos/${REPOSITORY}/statuses/${GENERATED_SHA}" -f state=success -f context=versionedcommits/release-pr -f description='Release contents generated successfully' -f target_url="$RUN_URL"

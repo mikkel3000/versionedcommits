@@ -4,17 +4,45 @@ This allows me to write commits in any style I like, while still being able to g
 
 It aims to be a simple and explicit, SemVer 2 compatible release generator.
 
-### Specification
-Add a version hint to a commit message when that commit should affect the next release.
+### Usage in GitHub Actions 
+
+Add this workflow to `.github/workflows/versionedcommits.yml` in your repository:
+
+```yaml
+name: Versioned releases
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  versionedcommits:
+    uses: mikkel3000/versionedcommits/.github/workflows/versionedcommits.yml@v0.1.0
+```
+
+In **Settings → Actions → General**, enable **Allow GitHub Actions to create and approve pull requests**. The reusable workflow uses the calling repository's `GITHUB_TOKEN`; no extra secret is required.
+
+### Write commits 
+Add version hints to your commit message:
+
 Hints are `@major`, `@minor` or `@patch`, and must start on a new line.
 
 ```txt
-Implement the query parser
+Commit title whatever you want
 
-Handle quoted phrases and normalize whitespace before building the SQL query.
+Commit message body whatever you want.
 
-@<hint> release-note title (optional)
-release-note description (optional)
+@<hint> release-note title(optional)
+release-note description(optional)
 @<hint>(optional)
 ```
 
@@ -104,15 +132,9 @@ Options:
 
 `--commit` requires `--format markdown`, `--output`, and `--tag`. It commits only the generated changelog with the message `Update the changelog for version <tag>`, then creates the release tags on that commit. It refuses to run when other changes are staged.
 
-### Golden path
+### Local release
 
-The GitHub Actions workflows keep one release PR up to date whenever commits with version metadata reach `main`. The PR contains the final versioned entry in `CHANGELOG.md` and the Linux release binary in `bin/versionedcommits`.
-
-Review and merge the generated `Release vX.Y.Z` PR when you want to release. Merging that up-to-date PR is the entire manual release step: the merged commit is tagged and all tags are pushed automatically. Moving aliases remain opt-in and are not part of this flow.
-
-Configure the `main` branch to require the `versionedcommits/release-pr` status check and require branches to be up to date before merging. Normal pull requests receive this check by running the Rust test and build workflow; the generated release PR receives it after its contents have been generated and tested. In the repository's Actions settings, enable "Allow GitHub Actions to create and approve pull requests." The workflows declare the contents, pull-request, and commit-status permissions they need.
-
-For local releases, the equivalent one-run path is:
+Without GitHub Actions, the equivalent one-run path is:
 
 ```sh
 versionedcommits --format markdown --output CHANGELOG.md --tag --commit
